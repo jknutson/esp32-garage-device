@@ -1,5 +1,5 @@
-author: mongoose-os
-description: Arduino OneWire API usage example (JavaScript)
+author: jknutson
+description: ESP32 IoT Temperature/Door sensor
 version: 1.0
 
 libs_version: ${mos.version}
@@ -22,6 +22,9 @@ libs:
     # libs necessary for the current app
   - origin: https://github.com/mongoose-os-libs/arduino-onewire
   - origin: https://github.com/mongoose-os-libs/mjs
+  - origin: https://github.com/mongoose-os-libs/wifi
+  - origin: https://github.com/mongoose-os-libs/gcp
+  - origin: https://github.com/mongoose-os-libs/mqtt
 
 tags:
   - js

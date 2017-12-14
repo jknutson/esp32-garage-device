@@ -9,10 +9,23 @@
 
 load('api_arduino_onewire.js');
 load('api_timer.js');
+load('api_gpio.js');
+load('api_mqtt.js');
 load('ds18b20.js');
 
+let topic = 'projects/keg-iot/topics/events';
+let timeFormat = '%FT%T%z';
+let doorPin = 12;
+
+// function to return formatted timestamp
+let timestamp = function() {
+  let now = Timer.now();
+  let ttl = 604800; // one week in seconds
+  return Timer.fmt(timeFormat, Timer.now());
+};
+
 // Initialize OneWire library
-let ow = OneWire.create(21 /* pin */);
+let ow = OneWire.create(14 /* OneWire pin */);
 
 // Number of sensors found on the 1-Wire bus
 let n = 0;
@@ -39,8 +52,17 @@ let searchSens = function() {
   return i;
 };
 
+function publishData(data) {
+  let ok = MQTT.pub(topic, data);
+  if (ok) {
+    print('Published');
+  } else {
+    print('Error publishing');
+  }
+}
+
 // This function prints temperature every second
-Timer.set(1000 /* milliseconds */, true /* repeat */, function() {
+Timer.set(5000 /* milliseconds */, true /* repeat */, function() {
   if (n === 0) {
     if ((n = searchSens()) === 0) {
       print('No device found');
@@ -54,6 +76,29 @@ Timer.set(1000 /* milliseconds */, true /* repeat */, function() {
       break;
     } else {
       print('Sensor#', i, 'Temperature:', t, '*C');
+      let payload = JSON.stringify({
+        timestamp: timestamp,
+        data: {
+          sensor: i,
+          temperature_c: t
+        }
+      });
+      print('temp payload: ', payload);
+      let pub = publishData(payload);
+      print('published: ', pub);
+      GPIO.set_mode(doorPin, GPIO.MODE_INPUT);
+      GPIO.set_pull(doorPin, GPIO.PULL_UP);
+      let doorStatus = GPIO.read(doorPin);
+      let payload = JSON.stringify({
+        timestamp: timestamp,
+        data: {
+          pin: doorPin,
+          doorStatus: doorStatus
+        }
+      });
+      print('door payload: ', payload);
+      let pub = publishData(payload);
+      print('published: ', pub);
     }
   }
 }, null);
