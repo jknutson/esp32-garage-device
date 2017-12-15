@@ -7,26 +7,43 @@
  * Datasheet: http://datasheets.maximintegrated.com/en/ds/DS18B20.pdf
  */
 
+load('api_config.js');
 load('api_arduino_onewire.js');
 load('api_timer.js');
 load('api_gpio.js');
 load('api_mqtt.js');
 load('ds18b20.js');
 
-let topic = 'projects/keg-iot/topics/events';
+// let topic = 'projects/keg-iot/topics/events';
 let timeFormat = '%FT%T%z';
-let doorPin = 12;
+let deviceId = Cfg.get('device.id');
+let deviceType = 'esp32';
+let topic = '/devices/' + deviceId + '/events';
+
+// let doorPin = 12;
+let doorPin = 14;
+let oneWirePin = 33;
 let isConnected = false;
 GPIO.set_mode(doorPin, GPIO.MODE_INPUT);
 GPIO.set_pull(doorPin, GPIO.PULL_DOWN);
 
 // Initialize OneWire library
-let ow = OneWire.create(14 /* OneWire pin */);
+let ow = OneWire.create(oneWirePin);
 
 // Number of sensors found on the 1-Wire bus
 let n = 0;
 // Sensors addresses
 let rom = ['01234567'];
+
+
+// function to return formatted timestamp and ttl value for dynamo auto-expiry
+let timestamp_ttl = function() {
+  let now = Timer.now();
+  let ttl = 604800; // one week in seconds
+  return [Timer.fmt(timeFormat, Timer.now()), now + ttl];
+};
+
+
 
 // Search for sensors
 let searchSens = function() {
@@ -49,11 +66,12 @@ let searchSens = function() {
 };
 
 function publishData(data) {
+  print('publishing topic: ', topic, ' -> ', data);
   let ok = MQTT.pub(topic, data);
   if (ok) {
-    print('Published');
+    print('Published!');
   } else {
-    print('Error publishing');
+    print('Error publishing!');
   }
 }
 
@@ -71,7 +89,8 @@ let readTemp = function() {
       return false;
     } else {
       print('Sensor#', i, 'Temperature:', t, '*C');
-      return [i, t];
+      let f_t = t * 9 / 5 + 32;
+      return [i, t, f_t];
     }
   }
 };
@@ -83,35 +102,46 @@ let readDoor = function() {
 };
 
 Timer.set(5000 /* milliseconds */, true /* repeat */, function() {
-  let timestamp = Timer.fmt(timeFormat, Timer.now());
+  let ts = timestamp_ttl();
   let rt = readTemp();
   if (rt) {
-    print(rt);
-    let tempPayload = JSON.stringify({
-      timestamp: timestamp,
-      data: {
-        sensor: rt[0],
-        temperature_c: rt[1]
-      }
-    });
-    print('temp payload: ', tempPayload);
-    let pub = publishData(tempPayload);
-    print('published: ', pub);
+    let sensor = rt[0];
+    let temperature_c = rt[1];
+    let temperature_f = rt[2];
+    if (rt) {
+
+      let tempPayload = JSON.stringify({
+        sensor: sensor,
+        temperature: {
+          fahrenheit: temperature_f,
+          celcius: temperature_c
+        },
+        timestamp: ts[0],
+        expires: ts[1],
+        deviceId: deviceId,
+        deviceType: deviceType,
+        eventType: 'temperature'
+      });
+
+      publishData(tempPayload);
+    }
   }
 
   let rd = readDoor();
-  print(rd);
+  let pin = rd[0];
+  let doorStatus = rd[1];
 
   let doorPayload = JSON.stringify({
-    timestamp: timestamp,
-    data: {
-      pin: rd[0],
-      doorStatus: rd[1]
-    }
+    doorStatus: doorStatus,
+    pin: doorPin,
+    timestamp: ts[0],
+    expires: ts[1],
+    deviceId: deviceId,
+    deviceType: deviceType,
+    eventType: 'door'
   });
-  print('door payload: ', doorPayload);
-  let pub = publishData(doorPayload);
-  print('published: ', pub);
+
+  publishData(doorPayload);
 
 }, null);
 
